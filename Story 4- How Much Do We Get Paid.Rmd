@@ -1,0 +1,371 @@
+---
+title: 'Story 4: How Much Do We Get Paid?'
+author: "Lakeranie Boodram"
+date: "2026-10-18"
+output: html_document
+---
+## Introduction
+
+Data professionals work in a variety of roles, including Data Scientists, Database Architects, Computer Systems Analysts, and Statisticians. Although these occupations share many responsibilities related to data, their salaries can vary depending on the job title and geographic location.
+
+The purpose of this analysis is to examine how average annual salaries differ among data-related occupations across the United States. Using salary data from the U.S. Bureau of Labor Statistics (BLS), I will compare earnings by occupation and state to identify salary trends and geographic differences.
+
+
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(readxl)
+library(ggplot2)
+library(plotly)
+library(scales)
+```
+
+
+
+```{r import-data, include=FALSE}
+
+# Link to the BLS salary dataset on GitHub
+file_url <- "https://raw.githubusercontent.com/LBoodram26/DATA608_Story4./main/state_M2025_dl.xlsx"
+
+# Download the Excel file
+download.file(
+  file_url,
+  destfile = "state_M2025_dl.xlsx",
+  mode = "wb"
+)
+
+# Load the dataset
+salary_data <- read_excel("state_M2025_dl.xlsx")
+
+# Display the first six rows
+head(salary_data)
+```
+## Exploring the Dataset
+
+Before analyzing salaries, I examined the dataset to understand its structure, identify the available variables, and determine which columns would be relevant to comparing salaries by occupation and state.
+
+```{r explore-data, include=FALSE}
+# Check the structure of the dataset
+glimpse(salary_data)
+
+# Display all column names
+names(salary_data)
+
+# Check the dimensions of the dataset
+dim(salary_data)
+```
+
+## Data Cleaning and Preparation
+
+To prepare the dataset for analysis, I selected six data-related occupations and focused on the 50 U.S. states and Washington, D.C. I also converted the salary columns into numeric values and removed records without available average salary information. This allows me to compare annual salaries across occupations and geographic locations.
+
+```{r clean-data, include=FALSE}
+# Select six data-related occupations
+data_roles <- c(
+  "Data Scientists",
+  "Database Architects",
+  "Database Administrators",
+  "Computer Systems Analysts",
+  "Operations Research Analysts",
+  "Statisticians"
+)
+
+# Keep the 50 states and Washington, D.C.
+state_codes <- c(state.abb, "DC")
+
+# Clean and filter the dataset
+salary_clean <- salary_data %>%
+  filter(
+    OCC_TITLE %in% data_roles,
+    AREA_TYPE == "2",
+    PRIM_STATE %in% state_codes
+  ) %>%
+  transmute(
+    State = AREA_TITLE,
+    State_Code = PRIM_STATE,
+    Job_Title = OCC_TITLE,
+    Average_Salary = as.numeric(A_MEAN),
+    Median_Salary = as.numeric(A_MEDIAN),
+    Employment = as.numeric(TOT_EMP)
+  ) %>%
+  filter(!is.na(Average_Salary))
+
+# Preview the cleaned dataset
+head(salary_clean)
+
+# Check the dimensions
+dim(salary_clean)
+```
+## Salary Comparison by Occupation
+
+To begin the analysis, I compared the average annual salaries of six data-related occupations in New York. This visualization highlights how earnings vary depending on the type of data-related work performed. New York serves as an initial example before expanding the comparison across other states.
+
+
+```{r salary-by-occupation, echo=FALSE, message=FALSE, warning=FALSE, fig.width=11, fig.height=6}
+# Filter the data for New York
+ny_salary <- salary_clean %>%
+  filter(State == "New York")
+
+# Create a comparison with the highest salary highlighted
+ggplot(
+  ny_salary,
+  aes(
+    x = reorder(Job_Title, Average_Salary),
+    y = Average_Salary,
+    fill = Job_Title == "Statisticians"
+  )
+) +
+  geom_col(show.legend = FALSE) +
+  geom_text(
+    aes(label = scales::dollar(Average_Salary)),
+    hjust = -0.1,
+    size = 4
+  ) +
+  coord_flip() +
+  scale_fill_manual(
+    values = c("FALSE" = "#B39DDB", "TRUE" = "#6A1B9A")
+  ) +
+  scale_y_continuous(
+    labels = scales::dollar,
+    expand = expansion(mult = c(0, 0.20))
+  ) +
+  labs(
+    title = "Statisticians Earn $32,330 More Than Database Administrators in New York",
+    subtitle = "Annual mean wages across six data-related occupations",
+    x = NULL,
+    y = "Average Annual Salary (USD)",
+    caption = "Source: U.S. Bureau of Labor Statistics, May 2025"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 15),
+    panel.grid.major.y = element_blank()
+  )
+```
+
+
+## Geographic Salary Differences Across the United States
+
+In addition to comparing salaries by occupation, I wanted to examine how geographic location affects earnings. For this comparison, I focused on Data Scientists and their average annual salaries across the United States.
+
+The map uses state-level salary data to highlight geographic differences and identify which states offer higher or lower average salaries for this occupation.
+
+
+```{r salary-map, echo=FALSE, message=FALSE, warning=FALSE}
+# Filter the dataset for Data Scientists
+map_data <- salary_clean %>%
+  filter(Job_Title == "Data Scientists")
+
+# Identify the highest- and lowest-paying states
+highest_state <- map_data %>%
+  slice_max(Average_Salary, n = 1, with_ties = FALSE)
+
+lowest_state <- map_data %>%
+  slice_min(Average_Salary, n = 1, with_ties = FALSE)
+
+# Create a finding-based title
+map_title <- paste0(
+  highest_state$State, " Pays Data Scientists ",
+  scales::dollar(highest_state$Average_Salary),
+  " Compared With ",
+  scales::dollar(lowest_state$Average_Salary),
+  " in ", lowest_state$State
+)
+
+# Create the interactive U.S. salary map
+salary_map <- plot_ly(
+  data = map_data,
+  type = "choropleth",
+  locations = ~State_Code,
+  locationmode = "USA-states",
+  z = ~Average_Salary,
+  text = ~paste0(
+    State,
+    "<br>Average Annual Salary: ",
+    scales::dollar(Average_Salary)
+  ),
+  hoverinfo = "text",
+  colorscale = list(
+    c(0, "#F3E5F5"),
+    c(0.5, "#BA68C8"),
+    c(1, "#6A1B9A")
+  ),
+  colorbar = list(
+    title = "Annual Salary",
+    tickprefix = "$",
+    tickformat = ",.0f"
+  )
+) %>%
+  layout(
+    title = list(
+      text = map_title,
+      font = list(size = 16)
+    ),
+    geo = list(
+      scope = "usa",
+      projection = list(type = "albers usa")
+    ),
+    margin = list(
+      l = 20,
+      r = 20,
+      b = 20,
+      t = 100
+    ),
+    height = 600
+  )
+
+salary_map
+```
+
+
+## Salary Comparison by Occupation and State
+
+To examine salary differences more closely, I created a heatmap comparing the average annual salaries of six data-related occupations across U.S. states. This visualization allows me to identify which occupations offer higher salaries in different geographic locations and whether certain states consistently have higher earnings.
+
+
+```{r salary-heatmap, echo=FALSE, message=FALSE, warning=FALSE, fig.width=13, fig.height=17}
+# Prepare the heatmap data
+heatmap_data <- salary_clean %>%
+  mutate(
+    Salary_Label = scales::dollar(Average_Salary)
+  )
+
+# Create an interactive heatmap
+salary_heatmap <- plot_ly(
+  data = heatmap_data,
+  x = ~Job_Title,
+  y = ~State,
+  z = ~Average_Salary,
+  type = "heatmap",
+colorscale = list(
+  c(0, "#F3E5F5"),    # Light lavender - lower salaries
+  c(0.5, "#BA68C8"),  # Medium purple - middle salaries
+  c(1, "#6A1B9A")     # Deep purple - higher salaries
+),
+  text = ~paste0(
+    "State: ", State,
+    "<br>Occupation: ", Job_Title,
+    "<br>Average Salary: ", Salary_Label
+  ),
+  hoverinfo = "text",
+  colorbar = list(
+    title = "Salary",
+    tickprefix = "$"
+  ),
+  hoverongaps = FALSE
+) %>%
+
+layout(
+  title = list(
+    text = paste0(
+      "Database Architects and Data Scientists Lead",
+      "<br>",
+      "<sup>California Database Architects: $175,330 ",
+      "average annual salary</sup>"
+    ),
+    font = list(size = 17)
+  ),
+
+    xaxis = list(
+      title = "Occupation",
+      tickangle = -35,
+      automargin = TRUE
+    ),
+    yaxis = list(
+      title = "State",
+      automargin = TRUE,
+      autorange = "reversed"
+    ),
+    margin = list(
+      l = 170,
+      r = 80,
+      b = 180,
+      t = 80
+    ),
+    height = 1100
+  )
+
+salary_heatmap
+```
+
+*Note: White cells represent occupation and state combinations where salary estimates were unavailable or suppressed in the BLS dataset. These cells should not be interpreted as zero salaries.*
+
+*Source: U.S. Bureau of Labor Statistics, May 2025.*
+
+
+
+
+```{r occupation-state-findings, include=FALSE}
+# Find the five highest salary combinations
+highest_combinations <- salary_clean %>%
+  arrange(desc(Average_Salary)) %>%
+  select(State, Job_Title, Average_Salary) %>%
+  head(5)
+
+# Find the five lowest salary combinations
+lowest_combinations <- salary_clean %>%
+  arrange(Average_Salary) %>%
+  select(State, Job_Title, Average_Salary) %>%
+  head(5)
+
+# Display the results
+highest_combinations
+lowest_combinations
+```
+
+
+
+```{r state-salary-rankings, include=FALSE}
+# Identify the five highest-paying states for Data Scientists
+highest_states <- map_data %>%
+  arrange(desc(Average_Salary)) %>%
+  select(State, Average_Salary) %>%
+  head(5)
+
+# Identify the five lowest-paying states for Data Scientists
+lowest_states <- map_data %>%
+  arrange(Average_Salary) %>%
+  select(State, Average_Salary) %>%
+  head(5)
+
+# Display the results
+highest_states
+lowest_states
+```
+
+
+
+```{r highest-salary-combinations, include=FALSE}
+# Display the five highest-paying combinations
+highest_combinations %>%
+  mutate(
+    Average_Salary = scales::dollar(Average_Salary)
+  ) %>%
+  knitr::kable(
+    col.names = c(
+      "State",
+      "Occupation",
+      "Average Annual Salary"
+    )
+  )
+```
+
+
+## Conclusion: Both Occupation and Location Influence Salaries
+
+The analysis shows that salaries among data-related professionals vary based on both occupation and geographic location.
+
+In New York, Statisticians earned an average of $146,430 annually, compared with $114,100 for Database Administrators. This represents a difference of $32,330.
+
+Location also makes a significant difference. Data Scientists in Washington earned an average of $158,040, compared with $79,290 in Mississippi, a difference of $78,750.
+
+When comparing occupations and states together, Database Architects in California had the highest average annual salary in the selected dataset at $175,330.
+
+Overall, these findings demonstrate that both job title and location are important when evaluating salary opportunities in data-related careers.
+
+The analysis is based on May 2025 data from the U.S. Bureau of Labor Statistics. Some salary estimates were unavailable or suppressed, and the comparisons do not account for cost of living, experience, or education.
+
+
+
+
+
